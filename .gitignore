@@ -1,0 +1,21 @@
+# Environment & secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Runtime data & logs
+*.db
+logs/
+*.log
+.gradio/
+
+# OS / IDE / misc
+desktop.ini
+Thumbs.db
+.idea/
+.vscode/

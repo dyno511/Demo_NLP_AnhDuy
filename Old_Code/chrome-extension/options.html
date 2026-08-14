@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>AnhDuy AUTO-BOT - Cài đặt</title>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --teal: #0d9488;
+      --teal-dark: #0f766e;
+      --teal-soft: #ccfbf1;
+      --red: #dc2626;
+      --red-soft: #fee2e2;
+      --green: #16a34a;
+      --green-soft: #dcfce7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .topbar {
+      height: 6px;
+      background: linear-gradient(90deg, var(--teal), #14b8a6, #f59e0b);
+    }
+    .wrap {
+      max-width: 520px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    .header h1 {
+      font-size: 20px;
+      margin: 0 0 4px;
+      font-weight: 800;
+      letter-spacing: .5px;
+      color: var(--teal-dark);
+    }
+    .header p { margin: 0 0 18px; font-size: 12px; color: var(--muted); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+    .field { margin-bottom: 14px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .field label span { font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .field input[type="number"] {
+      width: 100%;
+      padding: 9px 11px;
+      font-size: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 9px;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input[type="number"]:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(13,148,136,.15); }
+    .actions { display: flex; gap: 10px; }
+    button {
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      border: none;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: transform .12s, filter .12s, background .15s;
+    }
+    button:hover { filter: brightness(1.05); }
+    button:active { transform: translateY(1px); }
+    #save {
+      background: linear-gradient(90deg, var(--teal), #10b981);
+      color: #fff;
+      box-shadow: 0 3px 10px rgba(13,148,136,.35);
+    }
+    #reset {
+      background: var(--card);
+      color: var(--teal-dark);
+      border: 1.5px solid var(--teal);
+    }
+    #reset:hover { background: var(--teal-soft); }
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      background: var(--card);
+      border-left: 4px solid var(--border);
+      border-radius: 0 8px 8px 0;
+      padding: 8px 11px;
+      min-height: 15px;
+    }
+    #status.ok { border-left-color: var(--green); color: var(--green); background: var(--green-soft); }
+    #status.error { border-left-color: var(--red); color: var(--red); background: var(--red-soft); }
+    #author {
+      margin-top: 16px;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+    }
+    #author b { color: var(--teal-dark); font-weight: 800; }
+  </style>
+</head>
+<body>
+  <div class="topbar"></div>
+  <div class="wrap">
+    <div class="header">
+      <h1>AnhDuy AUTO-BOT</h1>
+      <p>Cau hinh tham so quet. Luu xong ap dung tu lan "Quet ngay" tiep theo.</p>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label for="postCount">So bai co binh luan can tim <span>(1 - 50)</span></label>
+        <input type="number" id="postCount" min="1" max="50" value="5">
+      </div>
+      <div class="field">
+        <label for="loadWait">Thoi gian cho load moi lan cuon <span>(500 - 10000 ms)</span></label>
+        <input type="number" id="loadWait" min="500" max="10000" step="500" value="3000">
+      </div>
+    </div>
+    <div class="actions">
+      <button id="save">Luu cau hinh</button>
+      <button id="reset">Khoi phuc mac dinh</button>
+    </div>
+    <div id="status">Chua luu thay doi nao.</div>
+    <div id="author">Tac gia: <b>AnhDuyDEPTRAI</b></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

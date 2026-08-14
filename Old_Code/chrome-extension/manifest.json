@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "AnhDuy AUTO-BOT",
+  "version": "3.3",
+  "author": "AnhDuyDEPTRAI",
+  "description": "Auto quet bai viet + binh luan cong khai cua group Facebook, trich noi dung moi bai",
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": ["downloads", "storage", "tabs", "scripting"],
+  "host_permissions": [
+    "*://www.facebook.com/groups/*",
+    "*://m.facebook.com/groups/*",
+    "*://m.facebook.com/story.php*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.facebook.com/groups/*",
+        "*://m.facebook.com/groups/*",
+        "*://m.facebook.com/story.php*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AnhDuy AUTO-BOT"
+  }
+}

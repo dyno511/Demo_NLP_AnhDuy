@@ -1,0 +1,31 @@
+# ============================================================
+#  AI Social Listening System (Gradio UI) - Python Dependencies
+#  Cai dat trong .venv:  .venv\Scripts\pip install -r requirements.txt
+# ============================================================
+
+# ==== AI Engine: PhoBERT sentiment (bat buoc) ====
+transformers>=4.30.0
+torch>=2.0.0
+numpy>=1.26.0
+
+# ==== Gradio Web Dashboard ====
+gradio>=4.0.0
+pandas>=2.0.0
+
+# ==== Pipeline Scheduler ====
+schedule>=1.2.0
+
+# ==== Alerting (Telegram / Slack) ====
+requests>=2.28.0
+
+# ==== Configuration (.env) ====
+python-dotenv>=1.0.0
+
+# ==== Facebook Crawler ====
+facebook-scraper>=0.2.0
+beautifulsoup4>=4.12.0
+
+# ==== Vietnamese NLP (du phong, khong bat buoc voi feature hien tai) ====
+underthesea>=9.0.0
+pyvi>=0.1.1
+torchvision>=0.28.0
