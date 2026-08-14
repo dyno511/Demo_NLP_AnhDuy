@@ -7,6 +7,7 @@ alerting, discovery, TXT parser, SQLite repository).
 """
 
 import json
+import os
 import argparse
 from datetime import datetime
 
@@ -399,12 +400,23 @@ def _empty_txt_df() -> pd.DataFrame:
     return pd.DataFrame(columns=TXT_COLUMNS)
 
 
-def analyze_txt_file(file: tuple, progress=gr.Progress()) -> tuple:
+def analyze_txt_file(file, progress=gr.Progress()) -> tuple:
     if file is None:
         return "⚠️ Vui lòng chọn file `.txt` trước khi phân tích. (FILE_NOT_SELECTED)", "", "", _empty_txt_df()
 
-    binary, filename = file
-    if binary is None:
+    # Gradio versions differ: type="filepath" -> str path, type="binary" ->
+    # bytes (v6+) or (bytes, filename) tuple (v4/v5). Handle them all.
+    if isinstance(file, bytes):
+        binary, filename = file, "upload.txt"
+    elif isinstance(file, str):
+        binary = open(file, "rb").read()
+        filename = os.path.basename(file)
+    elif isinstance(file, tuple):
+        binary, filename = file
+    else:
+        binary, filename = None, None
+
+    if not binary:
         return "⚠️ Vui lòng chọn file `.txt` trước khi phân tích. (FILE_NOT_SELECTED)", "", "", _empty_txt_df()
 
     APP.txt_analysis = None
