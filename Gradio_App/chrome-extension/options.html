@@ -62,7 +62,8 @@
       letter-spacing: .5px;
     }
     .field label span { font-weight: 400; text-transform: none; letter-spacing: 0; }
-    .field input[type="number"] {
+    .field input[type="number"],
+    .field input[type="text"] {
       width: 100%;
       padding: 9px 11px;
       font-size: 14px;
@@ -73,7 +74,8 @@
       outline: none;
       transition: border-color .15s, box-shadow .15s;
     }
-    .field input[type="number"]:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(13,148,136,.15); }
+    .field input[type="number"]:focus,
+    .field input[type="text"]:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(13,148,136,.15); }
     .actions { display: flex; gap: 10px; }
     button {
       padding: 10px 18px;
@@ -134,6 +136,14 @@
       <div class="field">
         <label for="loadWait">Thoi gian cho load moi lan cuon <span>(500 - 10000 ms)</span></label>
         <input type="number" id="loadWait" min="500" max="10000" step="500" value="3000">
+      </div>
+      <div class="field">
+        <label for="apiUrl">Server URL (API ghi nhan tu Extension) <span>dang https://.../api/extension/ingest</span></label>
+        <input type="text" id="apiUrl" placeholder="https://xxxxxx.gradio.live/api/extension/ingest">
+      </div>
+      <div class="field" style="font-size:11px;color:var(--muted);line-height:1.5;">
+        Mo trang web AI Social Listening (public URL), lay nguyen day duong dan tren, dan vao o tren.
+        Sau moi lan "Quet ngay", extension se TU DONG gui bai viet + binh luan len server de phan tich.
       </div>
     </div>
     <div class="actions">

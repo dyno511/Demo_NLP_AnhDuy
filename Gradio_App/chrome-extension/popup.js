@@ -5,16 +5,32 @@
  *     Tham so (so bai, thoi gian cho load) doc tu storage - cau hinh trong
  *     trang Cài đặt (options page) mo tu nut "Cài đặt".
  *   - Nut "Tai file txt" tai fb_posts_content.txt va nut "Xoa du lieu".
+ *   - Nut "Dong bo len server": gui bai viet da quet len public URL web app;
+ *     sau moi "Quet ngay" cung TU DONG dong bo (neu da cau hinh Server URL trong "Cai dat").
  */
 
 const STORAGE_KEY = "fb_posts";
+const API_URL_KEY = "fb_api_url";
 
 const buttonDownload = document.getElementById("download");
 const buttonClear = document.getElementById("clear");
 const buttonScan = document.getElementById("scan");
 const buttonSettings = document.getElementById("settings");
+const buttonSync = document.getElementById("sync");
 const statusEl = document.getElementById("status");
+const syncStatusEl = document.getElementById("syncStatus");
 const resultEl = document.getElementById("result");
+
+/**
+ * Hien banner rieng cho ket qua dong bo len server (xanh = thanh cong, do = that bai).
+ *
+ * @param {string} text - Noi dung thong bao
+ * @param {string} className - "ok" hoac "error"
+ */
+function showSyncBanner(text, className) {
+  syncStatusEl.textContent = text;
+  syncStatusEl.className = "show " + (className || "");
+}
 
 /**
  * Hien thi text trang thai + class mau cho vung status cua popup.
@@ -127,6 +143,7 @@ function refreshFromStorage() {
     const hasPosts = posts.length > 0;
     buttonDownload.disabled = !hasPosts;
     buttonClear.disabled = !hasPosts;
+    buttonSync.disabled = !hasPosts;
     if (hasPosts) {
       render(posts);
       const totalComments = posts.reduce((sum, p) => sum + (p.commentCount || 0), 0);
@@ -177,6 +194,145 @@ buttonSettings.addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
+/* --- Dong bo du lieu len server (public URL web app) --------------------- */
+
+/**
+ * Lay Server URL da cau hinh tu storage (key fb_api_url).
+ *
+ * @returns {Promise<string|null>} URL dang https://.../api/extension/ingest hoac null
+ */
+async function getServerUrl() {
+  const data = await chrome.storage.local.get(API_URL_KEY);
+  const url = (data[API_URL_KEY] || "").trim();
+  return url || null;
+}
+
+/**
+ * Mo ta chi tiet loi HTTP: gan y nghia cho status + kem chi tiet tu server.
+ *
+ * @param {number} status - Ma HTTP tra ve
+ * @param {string} bodyText - Noi dung response (de trich loi tu server)
+ * @returns {string} Chuoi mo ta loi day du
+ */
+function describeHttpError(status, bodyText) {
+  let detail = "";
+  if (bodyText) {
+    try {
+      const j = JSON.parse(bodyText);
+      detail = j && (j.error || j.detail || j.message);
+      if (typeof detail === "object") detail = JSON.stringify(detail);
+    } catch (_e) {
+      detail = bodyText.slice(0, 160);
+      if (bodyText.length > 160) detail += "...";
+    }
+  }
+  const map = {
+    400: "du lieu gui len khong hop le (payload khong phai JSON object)",
+    401: "chua xac thuc - server moi them auth?",
+    403: "server tu choi truy cap (CORS / auth)",
+    404: "khong tim thay API - kiem tra lai duong dan (phai la .../api/extension/ingest)",
+    405: "phuong thuc sai - API yeu cau POST, khong phai GET/PUT",
+    413: "du lieu qua lon - giam so bai/binh luan roi gui lai",
+    429: "gui qua nhieu lan - cho mot luc roi thu lai",
+    500: "server loi noi bo (xem log web app de biet them)",
+    502: "server khong phan hoi - tunnel/gateway loi",
+    503: "server dang khoi dong hoac qua tai khan hoi",
+  };
+  let msg = "HTTP " + status + " - " + (map[status] || "loi khong xac dinh");
+  if (detail) msg += "\nChi tiet server: " + detail;
+  return msg;
+}
+
+/**
+ * Gui danh sach bai viet len server qua POST /api/extension/ingest.
+ *
+ * Logic:
+ *   - Mo ta moi bai: url, postText, comments (mang), commentCount, content
+ *   - Fetch kem CORS (server da tra Access-Control-Allow-Origin: *)
+ *   - Timeout 30s; loi HTTP gan chi tiet; response khong hop le bao ro rang
+ *
+ * @param {Array} posts - Danh sach bai tu storage
+ * @returns {Promise<Object>} JSON tra ve tu server (status, stored_new, ...)
+ */
+async function uploadPosts(posts) {
+  const url = await getServerUrl();
+  if (!url) throw new Error("chua cau hinh Server URL (mo 'Cai dat').");
+  const items = posts.map((p) => ({
+    url: p.url,
+    postText: p.postText || "",
+    comments: Array.isArray(p.comments) ? p.comments : [],
+    commentCount: p.commentCount || (Array.isArray(p.comments) ? p.comments.length : 0),
+    content: p.content || "",
+  }));
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  let resp = null;
+  let bodyText = "";
+  try {
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: "AnhDuy AUTO-BOT", items }),
+      signal: controller.signal,
+    });
+    bodyText = await resp.text();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err && err.name === "AbortError") {
+      throw new Error("qua 30 giay server khong phan hoi. Kiem tra Server URL, internet va tunnel (gradio.live) con hoat dong.");
+    }
+    const detail = err && err.message ? err.message : String(err);
+    throw new Error(
+      "loi ket noi: " + detail +
+      "\nKiem tra: (1) Server URL dung dang https://.../api/extension/ingest, " +
+      "(2) web app dang chay va co mang, " +
+      "(3) CORS - server phai tra 'Access-Control-Allow-Origin' khi nhan OPTIONS."
+    );
+  }
+  clearTimeout(timeoutId);
+
+  if (!resp.ok) {
+    throw new Error(describeHttpError(resp.status, bodyText));
+  }
+  try {
+    return JSON.parse(bodyText);
+  } catch (_e) {
+    throw new Error("response khong phai JSON: " + bodyText.slice(0, 160));
+  }
+}
+
+/**
+ * Doc bai tu storage roi gui len server. Tra ve chuoi mo ta ket qua.
+ *
+ * @returns {Promise<string>} Chuoi trang thai (da gui bao nhieu bai...)
+ */
+async function syncToServer() {
+  const posts = await downloadPosts();
+  if (posts.length === 0) return "Khong co bai nao de dong bo.";
+  const result = await uploadPosts(posts);
+  return (
+    "Da gui " + result.received_posts + " bai / " + result.received_comments +
+    " binh luan len server (luu moi " + result.stored_new + ", trung " +
+    result.duplicates_skipped + ", canh bao " + result.alerts_triggered + ")."
+  );
+}
+
+buttonSync.addEventListener("click", async () => {
+  buttonSync.disabled = true;
+  try {
+    showSyncBanner("Dang gui len server...", "");
+    const msg = await syncToServer();
+    showSyncBanner("✅ " + msg, "ok");
+    setStatus(msg, "ok");
+  } catch (err) {
+    showSyncBanner("❌ Dong bo that bai: " + err.message, "error");
+    setStatus("Dong bo loi: " + err.message, "error");
+  } finally {
+    buttonSync.disabled = false;
+  }
+});
+
 /**
  * Nhan tien trinh auto-scroll tu content script (FB_SCAN_PROGRESS).
  *
@@ -212,12 +368,18 @@ buttonScan.addEventListener("click", async () => {
     // Tham so (so bai, thoi gian cho load) content script tu doc tu storage
     const resp = await chrome.tabs.sendMessage(tab.id, { type: "AUTO_SCAN" });
     if (resp && resp.count > 0) {
-      setStatus(
+      const scanText =
         "Group " + (resp.groupId || "?") + ": xong - " + resp.count + " bai (" +
         resp.totalComments + " binh luan). Ngung: " + resp.stopped +
-        " sau " + resp.scrolls + " lan cuon. Da luu cong don.",
-        "ok"
-      );
+        " sau " + resp.scrolls + " lan cuon. Da luu cong don.";
+      setStatus(scanText, "ok");
+      // Tu dong gui noi dung da quet len server (neu da cau hinh Server URL)
+      try {
+        const syncMsg = await syncToServer();
+        showSyncBanner("✅ Dong bo len server thanh cong: " + syncMsg, "ok");
+      } catch (syncErr) {
+        showSyncBanner("❌ Dong bo that bai: " + syncErr.message, "error");
+      }
     } else {
       const dbg = (resp && resp.debug) || {};
       setStatus(

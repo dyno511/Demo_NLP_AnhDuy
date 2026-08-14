@@ -2,7 +2,7 @@
 
 Hệ thống AI thực nghiệm **Social Listening tiếng Việt** phát hiện tự động nội dung tiêu cực (bốc phốt, khiếu nại, phản ánh) liên quan đến một **Tổ chức mục tiêu** trên Mạng xã hội, sau đó tự động gửi cảnh báo thời gian thực qua Telegram / Slack / Email và hiển thị trên Web Dashboard (Gradio).
 
-> Dự án này được **clone từ `Old_Code/`** (bản Streamlit) — toàn bộ logic nghiệp vụ (`app/`, `config.py`, `main.py`, `tests/`) được giữ nguyên, chỉ thay giao diện Web từ **Streamlit → Gradio** (`gradio_app.py`). Extension Chrome (`chrome-extension/`) được copy vào thư mục gốc, không sửa đổi.
+> Dự án này được **clone từ `Old_Code/`** (bản Streamlit) — toàn bộ logic nghiệp vụ (`app/`, `config.py`, `main.py`, `tests/`) được giữ nguyên, chỉ thay giao diện Web từ **Streamlit → Gradio** (`gradio_app.py`). Extension Chrome (`chrome-extension/`, **v3.4**) được nâng cấp thêm tính năng **đồng bộ bài quét lên server** qua `POST /api/extension/ingest`.
 
 ## 🏗️ Kiến Trúc Hệ Thống
 
@@ -119,6 +119,28 @@ Giao diện Web cung cấp 6 Tab chức năng (tương đương với bản Stre
 4. **🧪 AI Test Bench**: Kiểm thử trực tiếp PhoBERT và thuật toán nhận diện tổ chức với bất kỳ văn bản tiếng Việt nào (kèm chức năng gửi cảnh báo thử).
 5. **📜 Lịch Sử Cảnh Báo & Dữ Liệu**: Bảng tra cứu bài viết/bình luận đã quét và lịch sử cảnh báo.
 6. **📄 Phân Tích Cảm Xúc Từ File TXT**: Upload file `.txt` định dạng chuẩn, phân tích theo từng mẫu, lọc kết quả và gửi cảnh báo Telegram.
+7. **📡 Dữ Liệu Từ Extension**: Xem trước nội dung Chrome Extension quét và tự động đẩy lên (raw + bản ghi đã phân tích).
+
+## 🔌 Đồng Bộ Từ Chrome Extension (Extension → Server)
+
+Khi web app chạy với **public URL** (VD `https://xxxxxx.gradio.live`), Chrome Extension có thể
+tự động gửi bài viết + bình luận đã quét lên server để hệ thống phân tích bằng đúng pipeline AI
+(detect tổ chức + sentiment PhoBERT + cảnh báo) và lưu vào DB.
+
+**Cách dùng:**
+1. Mở extension → **Cài đặt** → nhập **Server URL** đầy đủ:
+   `https://xxxxxx.gradio.live/api/extension/ingest` → **Lưu cấu hình**.
+2. Bấm **Quét ngay** trên trang group → sau khi quét xong, extension **tự động đồng bộ**
+   (hoặc bấm nút **Đồng bộ lên server** để gửi lại dữ liệu đã lưu).
+3. Trên web app mở tab **📡 Dữ Liệu Từ Extension** để xem bản ghi vừa nhận + kết quả phân tích.
+
+Endpoint public:
+- `POST /api/extension/ingest` — nhận JSON `{ "source", "group_id", "items": [{url, postText, comments, ...}] }`
+- `GET  /api/extension/health` — kiểm tra server sống
+- Hỗ trợ CORS `Access-Control-Allow-Origin: *` để extension gửi được từ mọi nguồn.
+
+> Extension được clone từ `Old_Code/` và **đã được nâng cấp** (v3.4): thêm trường Server URL
+> trong trang Cài đặt, nút "Đồng bộ lên server" và tự động đồng bộ sau khi quét.
 
 ## 🛠️ Cấu Trúc Dự Án
 
@@ -130,7 +152,7 @@ Gradio_App/
 ├── gradio_app.py             # Gradio Web UI Dashboard (thay thế web_app.py Streamlit)
 ├── run_gradio_app.bat        # Web launcher (cmd) — tự dùng .venv
 ├── run_gradio_app.ps1        # Web launcher (PowerShell) — tự dùng .venv
-├── chrome-extension/         # Chrome Extension (copy nguyên vẹn từ Old_Code, không sửa đổi)
+├── chrome-extension/         # Chrome Extension (v3.4, có đồng bộ lên server)
 ├── app/
 │   ├── crawler/              # Module 1: Data Collection & Normalization
 │   ├── ai/                   # Module 2: AI Engine (PhoBERT + NER)

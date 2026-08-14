@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI Social Listening System - Gradio Web Dashboard.
 
 Replaces the Streamlit UI (web_app.py) with an equivalent Gradio Blocks UI.
@@ -8,11 +8,17 @@ alerting, discovery, TXT parser, SQLite repository).
 
 import json
 import os
+import re
 import argparse
+import time
+import threading
 from datetime import datetime
 
 import gradio as gr
 import pandas as pd
+from fastapi import Request
+from fastapi.responses import JSONResponse, Response
+from fastapi.concurrency import run_in_threadpool
 
 from config import Config
 from app.db.repository import Repository
@@ -46,6 +52,8 @@ class AppState:
         self.txt_analysis_file = None
         self.source_limit = 10
         self.config_message = ""
+        self.extension_last_ingest = None
+        self.extension_received_preview = []
 
 
 def build_state() -> AppState:
@@ -608,6 +616,281 @@ def load_model_ui(model_name: str) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# Ingest API: Chrome Extension đẩy nội dung đã quét lên server
+# ---------------------------------------------------------------------------
+
+EXTENSION_SOURCE = "extension"
+_extension_ingest_lock = threading.Lock()
+
+
+def _extract_facebook_post_id(url: str) -> str:
+    """Lấy post_id từ URL bài viết Facebook (dạng /groups/<id>/posts/<pid>)."""
+    if not url:
+        return ""
+    m = re.search(r"/groups/\d+/(?:posts|permalink)/(\d+)", url)
+    if m:
+        return m.group(1)
+    m = re.search(r"story_fbid=(\d+)", url)
+    return m.group(1) if m else ""
+
+
+def ingest_extension_items(payload: dict) -> dict:
+    """
+    Nhận JSON từ extension: chuyển thành item (POST + từng COMMENT), chạy
+    cùng quy trình như pipeline (dedup → detect org → sentiment → alert → DB),
+    ghi vào repository để hiển thị ở tab Lịch sử / Extension.
+
+    Payload: {"source": str, "group_id": str, "items": [{url, postText, comments, commentCount}]}
+    """
+    raw: list = (payload or {}).get("items") or []
+    stats = {
+        "status": "OK",
+        "received_posts": 0,
+        "received_comments": 0,
+        "stored_new": 0,
+        "duplicates_skipped": 0,
+        "alerts_triggered": 0,
+        "errors": [],
+    }
+    now_str = datetime.now().isoformat()
+    source_label = (payload or {}).get("source") or "Extension"
+
+    # Bước 1: chuẩn hóa dữ liệu đầu vào -> raw items (POST + COMMENT)
+    raw_items = []
+    seen_posts = set()
+    preview = []
+    for post in raw:
+        if not isinstance(post, dict):
+            continue
+        url = (post.get("url") or "").strip()
+        if not url:
+            continue
+        post_id = _extract_facebook_post_id(url) or url
+        if post_id in seen_posts:
+            continue
+        seen_posts.add(post_id)
+        post_text = (post.get("postText") or post.get("content") or "").strip()
+        comments = post.get("comments")
+        if not isinstance(comments, list):
+            comments = []
+        if post_text or comments:
+            stats["received_posts"] += 1
+            preview.append({"url": url, "postText": post_text[:300], "comments": comments[:10]})
+        if post_text:
+            raw_items.append({
+                "source": EXTENSION_SOURCE, "post_id": post_id, "post_url": url,
+                "author": "POST", "text": post_text, "content_type": "post",
+                "created_at": now_str,
+            })
+        for idx, comment in enumerate(comments):
+            text = str(comment or "").strip()
+            if not text:
+                continue
+            author = "Bình luận"
+            if ":" in text:
+                maybe_author, _, rest = text.partition(":")
+                if rest.strip():
+                    author = maybe_author.strip()
+                    text = rest.strip()
+            raw_items.append({
+                "source": EXTENSION_SOURCE, "post_id": post_id,
+                "comment_id": f"{post_id}_c{idx}", "post_url": url,
+                "author": author, "text": text, "content_type": "comment",
+                "created_at": now_str,
+            })
+            stats["received_comments"] += 1
+
+    # Bước 2: xử lý từng item theo đúng quy trình pipeline
+    for item in raw_items:
+        item_id = APP.repo.generate_item_id(
+            item.get("post_id", ""), item.get("comment_id"), item.get("text", "")
+        )
+        if APP.repo.is_item_processed(item_id):
+            stats["duplicates_skipped"] += 1
+            continue
+
+        text = item.get("text", "")
+        try:
+            det = APP.pipeline.org_detector.detect(text)
+            sent = APP.pipeline.sentiment_analyzer.analyze(text) or {}
+        except Exception as exc:
+            stats["errors"].append(f"Phân tích lỗi: {type(exc).__name__}: {exc}")
+            continue
+
+        combined = {
+            "org_detected": det.get("org_detected", False),
+            "matched_org": det.get("matched_org", ""),
+            "label": sent.get("label", "NEUTRAL"),
+            "confidence": float(sent.get("confidence", 0.0)),
+            "is_negative": sent.get("is_negative", False),
+        }
+
+        should_alert = (
+            combined["org_detected"]
+            and combined["is_negative"]
+            and combined["confidence"] >= Config.SENTIMENT_THRESHOLD
+        )
+        alert_sent = False
+        if should_alert:
+            alert_payload = {
+                "target_organization": combined["matched_org"] or Config.TARGET_ORGANIZATION,
+                "sentiment": combined["label"],
+                "confidence": combined["confidence"],
+                "text": text,
+                "source": source_label,
+                "post_url": item.get("post_url", ""),
+                "author": item.get("author", "Anonymous"),
+                "detected_at": now_str,
+            }
+            try:
+                alert_sent = APP.pipeline.alert_service.dispatch_alert(alert_payload)
+            except Exception as exc:
+                alert_sent = False
+                stats["errors"].append(f"Dispatch lỗi: {type(exc).__name__}: {exc}")
+            if alert_sent:
+                stats["alerts_triggered"] += 1
+                try:
+                    APP.repo.log_alert(
+                        item_id=item_id,
+                        channel=Config.ALERT_CHANNEL,
+                        target_org=combined["matched_org"] or Config.TARGET_ORGANIZATION,
+                        sentiment=combined["label"],
+                        confidence=combined["confidence"],
+                        message_text=text,
+                        status="SUCCESS",
+                    )
+                except Exception:
+                    pass
+
+        APP.repo.save_processed_item(item, combined, alert_sent)
+        stats["stored_new"] += 1
+
+    APP.extension_last_ingest = {**stats, "time": now_str, "source": source_label}
+    APP.extension_received_preview = preview
+    return stats
+
+
+def _cors_headers() -> dict:
+    return {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "3600",
+    }
+
+
+def register_extension_api(app) -> None:
+    """
+    Gắn endpoint public để extension POST dữ liệu lên.
+
+    Phải gọi trên App thực tế đang serve (kết quả trả về từ demo.launch()).
+    Gradio 6 tạo App mới khi launch nên nếu đăng ký trên demo.app trước khi
+    launch, route sẽ bị rớt (health 404).
+    """
+    if app is None or not hasattr(app, "router"):
+        logger.warning("Không gắn được Extension Ingest API (app không hợp lệ).")
+        return
+    prefix = "/api/extension"
+
+    @app.options(f"{prefix}/ingest")
+    async def _opts():
+        return Response(status_code=204, headers=_cors_headers())
+
+    @app.get(f"{prefix}/ingest")
+    async def _get_ingest():
+        # Accidental GET (proxy/tunnel có thể đổi POST -> GET): trả thông tin hữu ích
+        # thay vì 405 Method Not Allowed khiến extension báo lỗi khó hiểu.
+        return JSONResponse({
+            "status": "OK",
+            "hint": "API này chỉ nhận POST (extension dùng fetch POST). Dữ liệu phải gửi kèm body JSON.",
+            "example": '{"source": "AnhDuy AUTO-BOT", "items": [{"url": "...", "postText": "...", "comments": []}]}',
+        }, headers=_cors_headers())
+
+    @app.get(f"{prefix}/health")
+    async def _health():
+        return JSONResponse({"status": "OK"}, headers=_cors_headers())
+
+    @app.post(f"{prefix}/ingest")
+    async def _post(request: Request):
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Payload phải là một JSON object.")
+        except Exception as exc:
+            return JSONResponse(
+                {"status": "ERROR", "error": f"{type(exc).__name__}: {exc}"},
+                status_code=400, headers=_cors_headers(),
+            )
+        with _extension_ingest_lock:
+            try:
+                stats = await run_in_threadpool(ingest_extension_items, payload)
+            except Exception as exc:
+                return JSONResponse(
+                    {"status": "ERROR", "error": f"{type(exc).__name__}: {exc}"},
+                    status_code=500, headers=_cors_headers(),
+                )
+        return JSONResponse(stats, headers=_cors_headers())
+
+
+# ---------------------------------------------------------------------------
+# Tab: Dữ Liệu Từ Extension (xem trước dữ liệu extension gửi lên)
+# ---------------------------------------------------------------------------
+
+EXT_CRAWL_COLUMNS = ["URL", "Nội dung bài", "Số bình luận", "Bình luận"]
+
+
+def load_extension_view() -> tuple:
+    """Trả về: trạng thái lần nhận gần nhất + bảng raw preview + bảng DB."""
+    last = APP.extension_last_ingest
+    if last:
+        status_md = (
+            f"### 📡 Lần Nhận Gần Nhất\n\n"
+            f"- **Nguồn:** `{last.get('source', 'Extension')}` lúc `{last.get('time')}`\n"
+            f"- **Bài nhận:** `{last.get('received_posts', 0)}` | "
+            f"**Bình luận nhận:** `{last.get('received_comments', 0)}` | "
+            f"**Lưu mới vào DB:** `{last.get('stored_new', 0)}` | "
+            f"**Trùng lặp → bỏ qua:** `{last.get('duplicates_skipped', 0)}`\n"
+            f"- **Cảnh báo đã gửi:** `{last.get('alerts_triggered', 0)}`"
+        )
+        if last.get("errors"):
+            status_md += "\n- **Lỗi:**\n```text\n" + "\n".join(last["errors"][:5]) + "\n```"
+    else:
+        status_md = "Chưa có dữ liệu nào từ Extension. Mở extension, bấm **Quét ngay** rồi **Đồng bộ lên server**."
+
+    preview = APP.extension_received_preview or []
+    if preview:
+        raw_df = pd.DataFrame([
+            {
+                "URL": p.get("url", ""),
+                "Nội dung bài": p.get("postText", ""),
+                "Số bình luận": len(p.get("comments") or []),
+                "Bình luận": "\n".join(p.get("comments") or []),
+            }
+            for p in preview
+        ])
+    else:
+        raw_df = pd.DataFrame(columns=EXT_CRAWL_COLUMNS)
+
+    src_filter = {EXTENSION_SOURCE}
+    if last and last.get("source"):
+        src_filter.add(last["source"])
+    items = [
+        r for r in APP.repo.get_recent_items(limit=200)
+        if r.get("source") in src_filter
+    ]
+    if items:
+        db_df = pd.DataFrame(items)[
+            ["item_id", "source", "content_type", "author", "text", "org_detected",
+             "detected_org_name", "sentiment_label", "confidence", "alert_sent", "processed_at"]
+        ]
+    else:
+        db_df = pd.DataFrame(columns=["item_id", "source", "content_type", "author", "text",
+                                      "org_detected", "detected_org_name", "sentiment_label",
+                                      "confidence", "alert_sent", "processed_at"])
+    return status_md, raw_df, db_df
+
+
+# ---------------------------------------------------------------------------
 # UI Construction
 # ---------------------------------------------------------------------------
 
@@ -825,6 +1108,29 @@ def build_ui() -> gr.Blocks:
                 )
                 txt_alert_btn.click(send_txt_alerts, outputs=[txt_message])
 
+            # ---------------- Tab 8: Extension Ingest / Preview ----------------
+            with gr.Tab("📡 Dữ Liệu Từ Extension"):
+                gr.Markdown(
+                    "Xem nội dung mà **Chrome Extension** đã quét và tự động đẩy lên "
+                    "qua endpoint `POST /api/extension/ingest`. Phần mềm chạy cùng quy trình "
+                    "AI (detect tổ chức + sentiment + cảnh báo) như pipeline chính, kết quả "
+                    "lưu vào DB và hiển thị cả ở tab '📜 Lịch Sử'."
+                )
+                extension_last_md = gr.Markdown()
+                refresh_extension_btn = gr.Button("🔄 Làm Mới", variant="primary")
+                gr.Markdown("### Bài Vừa Nhận Từ Extension (raw)")
+                extension_raw_table = gr.Dataframe(headers=EXT_CRAWL_COLUMNS)
+                gr.Markdown("### Bản Ghi Đã Phân Tích Lưu Vào DB (source = extension)")
+                extension_db_table = gr.Dataframe()
+                refresh_extension_btn.click(
+                    load_extension_view,
+                    outputs=[extension_last_md, extension_raw_table, extension_db_table],
+                )
+                demo.load(
+                    load_extension_view,
+                    outputs=[extension_last_md, extension_raw_table, extension_db_table],
+                )
+
         return demo
 
 
@@ -848,4 +1154,25 @@ if __name__ == "__main__":
         launch_kwargs["theme"] = UI_THEME
     else:
         launch_kwargs["show_api"] = False
-    demo.launch(**launch_kwargs)
+
+    # prevent_thread_lock để chúng ta có thể đăng ký Extension Ingest API lên
+    # App thực tế đang serve (gradio tạo App mới khi launch, demo.app là bản cũ).
+    launch_kwargs["prevent_thread_lock"] = True
+    result = demo.launch(**launch_kwargs)
+
+    serve_app = None
+    if isinstance(result, tuple) and len(result) > 0 and hasattr(result[0], "router"):
+        serve_app = result[0]
+    elif hasattr(result, "router"):
+        serve_app = result
+    if serve_app is None:
+        serve_app = getattr(demo, "app", None)
+    register_extension_api(serve_app)
+
+    logger.info("Extension Ingest API sẵn sàng tại POST /api/extension/ingest.")
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+

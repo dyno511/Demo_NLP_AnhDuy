@@ -118,6 +118,22 @@
     }
     #status.ok { border-left-color: var(--green); color: var(--green); background: var(--green-soft); }
     #status.error { border-left-color: var(--red); color: var(--red); background: var(--red-soft); }
+    #syncStatus {
+      margin: 10px 0 2px;
+      padding: 8px 10px;
+      border-radius: 9px;
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.5;
+      white-space: pre-line;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--card);
+      display: none;
+    }
+    #syncStatus.show { display: block; }
+    #syncStatus.ok { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+    #syncStatus.error { border-color: var(--red); color: var(--red); background: var(--red-soft); }
     #result { margin-top: 8px; font-size: 11px; word-break: break-all; }
     #result .item {
       padding: 9px 11px;
@@ -163,7 +179,9 @@
     <button id="scan">Quet ngay (tab group dang mo)</button>
     <div id="status">Chua co du lieu. Mo trang group bat ky.</div>
     <div id="result"></div>
+    <div id="syncStatus"></div>
     <div class="bottom-row">
+      <button id="sync" class="secondary" disabled>Dong bo len server</button>
       <button id="download" class="secondary" disabled>Tai file txt</button>
       <button id="clear" class="secondary" disabled>Xoa du lieu</button>
     </div>

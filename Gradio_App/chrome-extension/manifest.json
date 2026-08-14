@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AnhDuy AUTO-BOT",
-  "version": "3.3",
+  "version": "3.4",
   "author": "AnhDuyDEPTRAI",
   "description": "Auto quet bai viet + binh luan cong khai cua group Facebook, trich noi dung moi bai",
   "options_ui": {
@@ -12,7 +12,8 @@
   "host_permissions": [
     "*://www.facebook.com/groups/*",
     "*://m.facebook.com/groups/*",
-    "*://m.facebook.com/story.php*"
+    "*://m.facebook.com/story.php*",
+    "<all_urls>"
   ],
   "content_scripts": [
     {

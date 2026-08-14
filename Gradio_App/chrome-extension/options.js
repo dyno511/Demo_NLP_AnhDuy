@@ -7,11 +7,13 @@
 
 const POST_COUNT_KEY = "fb_post_count";
 const LOAD_WAIT_KEY = "fb_load_wait";
+const API_URL_KEY = "fb_api_url";
 const DEFAULT_COUNT = 5;
 const DEFAULT_WAIT = 3000;
 
 const countInput = document.getElementById("postCount");
 const loadWaitInput = document.getElementById("loadWait");
+const apiUrlInput = document.getElementById("apiUrl");
 const saveButton = document.getElementById("save");
 const resetButton = document.getElementById("reset");
 const statusEl = document.getElementById("status");
@@ -34,17 +36,19 @@ function setStatus(text, className) {
  *   - Doc 2 key cung luc, chi gan khi co gia tri hop le
  */
 function loadFromStorage() {
-  chrome.storage.local.get([POST_COUNT_KEY, LOAD_WAIT_KEY]).then((data) => {
+  chrome.storage.local.get([POST_COUNT_KEY, LOAD_WAIT_KEY, API_URL_KEY]).then((data) => {
     if (data[POST_COUNT_KEY]) countInput.value = data[POST_COUNT_KEY];
     if (data[LOAD_WAIT_KEY]) loadWaitInput.value = data[LOAD_WAIT_KEY];
+    if (data[API_URL_KEY]) apiUrlInput.value = data[API_URL_KEY];
   });
 }
 
 /**
- * Kiem tra + luu gia tri 2 input vao storage.
+ * Kiem tra + luu gia tri cac input vao storage.
  *
  * Logic:
- *   - Validate tuong tự content script (count 1-50, wait 500-10000)
+ *   - Validate tuong tu content script (count 1-50, wait 500-10000)
+ *   - Server URL duoc phep trong; neu co phai bat dau bang http:// hoac https://
  *   - Loi -> hien status error, khong luu
  */
 function saveSettings() {
@@ -58,8 +62,22 @@ function saveSettings() {
     setStatus("Thoi gian cho load phai trong 500-10000ms - chua luu.", "error");
     return;
   }
-  chrome.storage.local.set({ [POST_COUNT_KEY]: count, [LOAD_WAIT_KEY]: wait }).then(() => {
-    setStatus("Da luu: " + count + " bai, cho load " + wait + "ms. Ap dung tu lan quet tiep theo.", "ok");
+  const apiUrl = (apiUrlInput.value || "").trim();
+  if (apiUrl && !/^https?:\/\//.test(apiUrl)) {
+    setStatus("Server URL phai bat dau bang http:// hoac https:// - chua luu.", "error");
+    return;
+  }
+  chrome.storage.local.set({
+    [POST_COUNT_KEY]: count,
+    [LOAD_WAIT_KEY]: wait,
+    [API_URL_KEY]: apiUrl,
+  }).then(() => {
+    setStatus(
+      "Da luu: " + count + " bai, cho load " + wait + "ms" +
+      (apiUrl ? ", Server URL: " + apiUrl : ", chua co Server URL (khong dong bo)") +
+      ".",
+      "ok"
+    );
   });
 }
 
@@ -68,8 +86,9 @@ saveButton.addEventListener("click", saveSettings);
 resetButton.addEventListener("click", () => {
   countInput.value = DEFAULT_COUNT;
   loadWaitInput.value = DEFAULT_WAIT;
-  chrome.storage.local.remove([POST_COUNT_KEY, LOAD_WAIT_KEY]).then(() => {
-    setStatus("Da khoi phuc mac dinh (5 bai, 3000ms).", "ok");
+  apiUrlInput.value = "";
+  chrome.storage.local.remove([POST_COUNT_KEY, LOAD_WAIT_KEY, API_URL_KEY]).then(() => {
+    setStatus("Da khoi phuc mac dinh (5 bai, 3000ms, khong dong bo).", "ok");
   });
 });
 
