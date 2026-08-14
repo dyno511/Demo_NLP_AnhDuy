@@ -17,6 +17,7 @@ const buttonClear = document.getElementById("clear");
 const buttonScan = document.getElementById("scan");
 const buttonSettings = document.getElementById("settings");
 const buttonSync = document.getElementById("sync");
+const buttonCheckApi = document.getElementById("checkApi");
 const statusEl = document.getElementById("status");
 const syncStatusEl = document.getElementById("syncStatus");
 const resultEl = document.getElementById("result");
@@ -348,6 +349,73 @@ buttonSync.addEventListener("click", async () => {
     setStatus("Dong bo loi: " + err.message, "error");
   } finally {
     buttonSync.disabled = false;
+  }
+});
+
+/**
+ * Dem tay ket noi toi server: gui GET /api/extension/health de kiem tra
+ * server con song + duong dan API co dung khong, khong can quet truoc.
+ *
+ * Logic:
+ *   - Tach root tu ingest URL (bo "/api/extension/ingest") de goi health
+ *   - GET timeout 10s; loi mang / HTTP duoc mo ta chi tiet
+ *
+ * @returns {Promise<string>} Chuoi mo ta ket qua
+ */
+async function checkServerApi() {
+  const ingestUrl = await getServerUrl();
+  if (!ingestUrl) throw new Error("chua cau hinh Server URL (mo 'Cai dat').");
+  const healthUrl = ingestUrl.replace(/\/api\/extension\/ingest$/, "/api/extension/health");
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  let resp = null;
+  let bodyText = "";
+  try {
+    resp = await fetch(healthUrl, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    bodyText = await resp.text();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err && err.name === "AbortError") {
+      throw new Error("qua 10 giay server khong phan hoi. Kiem tra Server URL, internet va tunnel (gradio.live) con hoat dong.");
+    }
+    const detail = err && err.message ? err.message : String(err);
+    throw new Error(
+      "loi ket noi: " + detail +
+      "\nKiem tra: (1) web app dang chay va co mang, (2) Server URL dung khi bam 'Luu' trong Cài đặt."
+    );
+  }
+  clearTimeout(timeoutId);
+
+  if (!resp.ok) {
+    throw new Error(describeHttpError(resp.status, bodyText));
+  }
+  let json = null;
+  try {
+    json = JSON.parse(bodyText);
+  } catch (_e) {
+    throw new Error("response khong phai JSON: " + bodyText.slice(0, 160));
+  }
+  return "Server OK: " + healthUrl + " -> status=" + (json.status || "?") +
+         (json.server_version ? ", version=" + json.server_version : "");
+}
+
+buttonCheckApi.addEventListener("click", async () => {
+  buttonCheckApi.disabled = true;
+  try {
+    showSyncBanner("Dang kiem tra API...", "");
+    const msg = await checkServerApi();
+    showSyncBanner("✅ " + msg, "ok");
+    setStatus("API con song.", "ok");
+  } catch (err) {
+    showSyncBanner("❌ Kiem tra API that bai: " + err.message, "error");
+    setStatus("Kiem tra API loi.", "error");
+  } finally {
+    buttonCheckApi.disabled = false;
   }
 });
 
