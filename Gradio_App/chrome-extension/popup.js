@@ -197,13 +197,31 @@ buttonSettings.addEventListener("click", () => {
 /* --- Dong bo du lieu len server (public URL web app) --------------------- */
 
 /**
- * Lay Server URL da cau hinh tu storage (key fb_api_url).
+ * Chuan hoa Server URL sang dang day du /api/extension/ingest.
+ * Nguoi dung chi can dan public URL root (VD https://xxx.gradio.live),
+ * ham tu dong noi them path chuan de tranh loi HTTP 405 (POST len root).
+ *
+ * @param {string} raw - Chuoi URL nguoi dung nhap
+ * @returns {string} URL chuan (vd .../api/extension/ingest) hoac "" neu khong hop le
+ */
+function normalizeApiUrl(raw) {
+  let url = (raw || "").trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(url)) return "";
+  const lower = url.toLowerCase();
+  if (lower.endsWith("/api/extension/ingest")) return url;
+  if (lower.endsWith("/api/extension")) return url + "/ingest";
+  if (lower.endsWith("/api")) return url + "/extension/ingest";
+  return url + "/api/extension/ingest";
+}
+
+/**
+ * Lay Server URL da cau hinh tu storage (key fb_api_url) va chuan hoa.
  *
  * @returns {Promise<string|null>} URL dang https://.../api/extension/ingest hoac null
  */
 async function getServerUrl() {
   const data = await chrome.storage.local.get(API_URL_KEY);
-  const url = (data[API_URL_KEY] || "").trim();
+  const url = normalizeApiUrl(data[API_URL_KEY] || "");
   return url || null;
 }
 

@@ -19,6 +19,24 @@ const resetButton = document.getElementById("reset");
 const statusEl = document.getElementById("status");
 
 /**
+ * Chuan hoa Server URL sang dang day du /api/extension/ingest.
+ * Nguoi dung chi can dan public URL root (VD https://xxx.gradio.live),
+ * ham tu dong noi them path chuan de tranh loi HTTP 405 (POST len root).
+ *
+ * @param {string} raw - Chuoi URL nguoi dung nhap
+ * @returns {string} URL chuan (vd .../api/extension/ingest) hoac "" neu khong hop le
+ */
+function normalizeApiUrl(raw) {
+  let url = (raw || "").trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(url)) return "";
+  const lower = url.toLowerCase();
+  if (lower.endsWith("/api/extension/ingest")) return url;
+  if (lower.endsWith("/api/extension")) return url + "/ingest";
+  if (lower.endsWith("/api")) return url + "/extension/ingest";
+  return url + "/api/extension/ingest";
+}
+
+/**
  * Hien thi text trang thai + class mau cho vung status.
  *
  * @param {string} text - Noi dung trang thai
@@ -62,10 +80,13 @@ function saveSettings() {
     setStatus("Thoi gian cho load phai trong 500-10000ms - chua luu.", "error");
     return;
   }
-  const apiUrl = (apiUrlInput.value || "").trim();
-  if (apiUrl && !/^https?:\/\//.test(apiUrl)) {
+  const apiUrl = normalizeApiUrl(apiUrlInput.value || "");
+  if (apiUrlInput.value.trim() && !apiUrl) {
     setStatus("Server URL phai bat dau bang http:// hoac https:// - chua luu.", "error");
     return;
+  }
+  if (apiUrl && apiUrl !== apiUrlInput.value.trim().replace(/\/+$/, "")) {
+    setStatus("Da tu chuan hoa URL thanh: " + apiUrl, "ok");
   }
   chrome.storage.local.set({
     [POST_COUNT_KEY]: count,
