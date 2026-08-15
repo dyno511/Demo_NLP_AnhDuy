@@ -911,7 +911,7 @@ def build_ui() -> gr.Blocks:
 
         with gr.Tabs():
             # ---------------- Tab 1: Overview ----------------
-            with gr.Tab("📊 Tổng Quan Hệ Thống"):
+            with gr.Tab("📊 Tổng Quan Hệ Thống", visible=False):
                 overview_grid = gr.HTML()
                 info_row = gr.Row()
                 with info_row:
@@ -929,7 +929,7 @@ def build_ui() -> gr.Blocks:
                 demo.load(load_overview_info, outputs=[target_info, aliases_info])
 
             # ---------------- Tab 2: Configuration ----------------
-            with gr.Tab("⚙️ Cấu Hình Hệ Thống"):
+            with gr.Tab("⚙️ Cấu Hình Hệ Thống", visible=False):
                 gr.Markdown("Cấu hình tổ chức mục tiêu, nguồn dữ liệu, ngưỡng cảnh báo và kênh Telegram.")
                 with gr.Row():
                     with gr.Column():
@@ -1011,7 +1011,7 @@ def build_ui() -> gr.Blocks:
                 demo.load(model_status, outputs=[model_status_md])
 
             # ---------------- Tab 3: Scan / Discovery ----------------
-            with gr.Tab("🚀 Kích Hoạt Quét Dữ Liệu"):
+            with gr.Tab("🚀 Kích Hoạt Quét Dữ Liệu", visible=False):
                 gr.Markdown(
                     "Khu vực vận hành: khám phá nguồn công khai (Source Discovery) "
                     "và kích hoạt chu kỳ quét thủ công. "
